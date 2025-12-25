@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>4D Thriller Cyber Pong</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+        
+        body {
+            background-color: #050505;
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 100vh;
+            filter: drop-shadow(0 0 10px rgba(0, 255, 242, 0.2));
+            transition: transform 0.1s ease-out;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .menu-card {
+            background: rgba(10, 0, 0, 0.95);
+            border: 2px solid #ff003c;
+            padding: 2.5rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            pointer-events: auto;
+            box-shadow: 0 0 50px rgba(255, 0, 60, 0.5);
+            backdrop-filter: blur(20px);
+            width: 380px;
+        }
+
+        .btn {
+            background: #ff003c;
+            color: #fff;
+            padding: 0.75rem 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            border: none;
+            margin: 0.25rem;
+            width: 100%;
+            clip-path: polygon(5% 0, 100% 0, 95% 100%, 0% 100%);
+        }
+
+        .btn:hover {
+            background: #fff;
+            color: #ff003c;
+            box-shadow: 0 0 20px #ff003c;
+        }
+
+        .input-field, .select-field {
+            background: #111;
+            border: 1px solid #ff003c;
+            padding: 0.5rem;
+            color: #00fff2;
+            width: 100%;
+            margin-bottom: 0.75rem;
+            text-align: center;
+            outline: none;
+        }
+
+        .hidden { display: none !important; }
+
+        #game-info {
+            position: absolute;
+            top: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 90%;
+            max-width: 900px;
+            font-size: 1.1rem;
+            pointer-events: none;
+            z-index: 5;
+            color: #00fff2;
+            text-shadow: 0 0 10px #00fff2;
+        }
+
+        #timer-display {
+            font-size: 2rem;
+            color: #ff003c;
+            font-weight: bold;
+        }
+
+        .thriller-vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            box-shadow: inset 0 0 200px rgba(255, 0, 0, 0.4);
+            z-index: 2;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen">
+
+    <div id="thriller-fx" class="thriller-vignette opacity-0"></div>
+
+    <div id="game-info" class="hidden">
+        <div class="w-1/3"><span id="display-name">PLAYER</span>: <span id="player-score">0</span></div>
+        <div class="w-1/3 text-center"><span id="timer-display">00:00</span></div>
+        <div class="w-1/3 text-right">CPU: <span id="ai-score">0</span></div>
+    </div>
+
+    <!-- MAIN MENU -->
+    <div id="menu" class="ui-overlay">
+        <div class="menu-card">
+            <h1 class="text-3xl mb-4 text-[#ff003c] font-bold tracking-tighter">4D THRILLER PONG</h1>
+            
+            <input type="text" id="username" class="input-field" placeholder="PILOT NAME" maxlength="10">
+            
+            <label class="text-[10px] text-gray-400 block mb-1">MATCH DURATION</label>
+            <select id="duration" class="select-field mb-4">
+                <option value="30">30 SECONDS</option>
+                <option value="60">1 MINUTE</option>
+                <option value="120">2 MINUTES</option>
+                <option value="300">5 MINUTES</option>
+            </select>
+
+            <div class="flex flex-col gap-1">
+                <button class="btn" onclick="initGame('easy')">STABLE REALITY (EASY)</button>
+                <button class="btn" onclick="initGame('hard')" style="background: #9d00ff;">WARPED REALITY (HARD)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME OVER SCREEN -->
+    <div id="game-over" class="ui-overlay hidden">
+        <div class="menu-card border-white shadow-white">
+            <h1 id="winner-text" class="text-4xl mb-2 text-white font-bold">MATCH ENDED</h1>
+            <p id="final-stats" class="mb-6 text-cyan-400">Score: 0 - 0</p>
+            <button class="btn" onclick="location.reload()">RE-ENTER SIMULATION</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Game Configuration
+        const CONFIG = {
+            paddleWidth: 15,
+            paddleHeight: 90,
+            ballRadius: 8,
+            colors: { player: '#00fff2', ai: '#ff003c', ball: '#ffffff' }
+        };
+
+        let gameState = 'MENU';
+        let difficulty = 'easy';
+        let timeLeft = 0;
+        let timerInterval;
+        
+        let playerY = 0, aiY = 0;
+        let ball = { x: 0, y: 0, dx: 0, dy: 0, speed: 0 };
+        let scores = { player: 0, ai: 0 };
+        let particles = [];
+        let shakeFrames = 0;
+        let dimensionShift = 0;
+
+        // Sound Synthesis
+        function playSound(freq, type = 'sine', duration = 0.1, volume = 0.1) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function resize() {
+            canvas.width = Math.min(window.innerWidth * 0.95, 1000);
+            canvas.height = Math.min(window.innerHeight * 0.75, 600);
+            playerY = canvas.height / 2 - CONFIG.paddleHeight / 2;
+            aiY = canvas.height / 2 - CONFIG.paddleHeight / 2;
+        }
+
+        function resetBall() {
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height / 2;
+            const baseSpeed = difficulty === 'hard' ? 10 : 7;
+            ball.speed = baseSpeed;
+            const angle = (Math.random() - 0.5) * (Math.PI / 2.5);
+            const direction = Math.random() > 0.5 ? 1 : -1;
+            ball.dx = direction * ball.speed * Math.cos(angle);
+            ball.dy = ball.speed * Math.sin(angle);
+        }
+
+        function initGame(lvl) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            difficulty = lvl;
+            const user = document.getElementById('username').value.trim() || 'PILOT';
+            timeLeft = parseInt(document.getElementById('duration').value);
+            
+            document.getElementById('display-name').innerText = user.toUpperCase();
+            document.getElementById('menu').classList.add('hidden');
+            document.getElementById('game-info').classList.remove('hidden');
+            
+            gameState = 'PLAYING';
+            scores = { player: 0, ai: 0 };
+            updateScoreUI();
+            resetBall();
+            
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                const mins = Math.floor(timeLeft / 60);
+                const secs = timeLeft % 60;
+                document.getElementById('timer-display').innerText = 
+                    `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                
+                if (timeLeft <= 0) endGame();
+            }, 1000);
+        }
+
+        function endGame() {
+            clearInterval(timerInterval);
+            gameState = 'GAMEOVER';
+            document.getElementById('game-over').classList.remove('hidden');
+            
+            const winText = scores.player > scores.ai ? "MISSION SUCCESS" : 
+                           scores.player < scores.ai ? "MISSION FAILED" : "TEMPORAL TIE";
+            document.getElementById('winner-text').innerText = winText;
+            document.getElementById('final-stats').innerText = `${scores.player} - ${scores.ai}`;
+            playSound(200, 'sawtooth', 0.5, 0.2);
+        }
+
+        function updateScoreUI() {
+            document.getElementById('player-score').innerText = scores.player;
+            document.getElementById('ai-score').innerText = scores.ai;
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            if (gameState !== 'PLAYING') return;
+            const rect = canvas.getBoundingClientRect();
+            playerY = (e.clientY - rect.top) - CONFIG.paddleHeight / 2;
+            playerY = Math.max(0, Math.min(canvas.height - CONFIG.paddleHeight, playerY));
+        });
+
+        function update() {
+            if (gameState !== 'PLAYING') return;
+
+            // 4D Dimensional Warp Effect
+            dimensionShift += 0.02;
+            if (difficulty === 'hard') {
+                const warp = Math.sin(dimensionShift) * 5;
+                canvas.style.transform = `perspective(1000px) rotateY(${warp}deg) rotateX(${Math.cos(dimensionShift)*2}deg)`;
+            }
+
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            // Wall Bounces
+            if (ball.y - CONFIG.ballRadius < 0 || ball.y + CONFIG.ballRadius > canvas.height) {
+                ball.dy *= -1;
+                playSound(400, 'sine', 0.05);
+                shakeFrames = 2;
+            }
+
+            // AI tracking
+            const aiCenter = aiY + CONFIG.paddleHeight / 2;
+            const reactionSpeed = difficulty === 'hard' ? 0.88 : 0.6;
+            if (aiCenter < ball.y - 10) aiY += ball.speed * reactionSpeed;
+            else if (aiCenter > ball.y + 10) aiY -= ball.speed * reactionSpeed;
+
+            // Paddle Collisions
+            const checkPaddle = (px, py) => ball.y > py && ball.y < py + CONFIG.paddleHeight;
+
+            if (ball.dx < 0 && ball.x - CONFIG.ballRadius < CONFIG.paddleWidth) {
+                if (checkPaddle(0, playerY)) {
+                    ball.dx = Math.abs(ball.dx) + 0.5;
+                    ball.dy += (ball.y - (playerY + CONFIG.paddleHeight/2)) * 0.2;
+                    playSound(600, 'square', 0.1);
+                    shakeFrames = 5;
+                }
+            } else if (ball.dx > 0 && ball.x + CONFIG.ballRadius > canvas.width - CONFIG.paddleWidth) {
+                if (checkPaddle(canvas.width - CONFIG.paddleWidth, aiY)) {
+                    ball.dx = -Math.abs(ball.dx) - 0.5;
+                    ball.dy += (ball.y - (aiY + CONFIG.paddleHeight/2)) * 0.2;
+                    playSound(500, 'square', 0.1);
+                    shakeFrames = 5;
+                }
+            }
+
+            // Scoring
+            if (ball.x < 0) {
+                scores.ai++;
+                playSound(150, 'triangle', 0.3);
+                updateScoreUI();
+                resetBall();
+            } else if (ball.x > canvas.width) {
+                scores.player++;
+                playSound(800, 'triangle', 0.3);
+                updateScoreUI();
+                resetBall();
+            }
+        }
+
+        function draw() {
+            ctx.save();
+            if (shakeFrames > 0) {
+                ctx.translate((Math.random()-0.5)*15, (Math.random()-0.5)*15);
+                shakeFrames--;
+            }
+
+            // Background depth
+            ctx.fillStyle = '#050000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 4D Grid lines
+            ctx.strokeStyle = 'rgba(0, 255, 242, 0.05)';
+            ctx.lineWidth = 1;
+            for(let i=0; i<canvas.width; i+=50) {
+                ctx.beginPath();
+                ctx.moveTo(i + Math.sin(dimensionShift)*10, 0);
+                ctx.lineTo(i - Math.sin(dimensionShift)*10, canvas.height);
+                ctx.stroke();
+            }
+
+            // Paddles
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = CONFIG.colors.player;
+            ctx.shadowColor = CONFIG.colors.player;
+            ctx.fillRect(0, playerY, CONFIG.paddleWidth, CONFIG.paddleHeight);
+
+            ctx.fillStyle = CONFIG.colors.ai;
+            ctx.shadowColor = CONFIG.colors.ai;
+            ctx.fillRect(canvas.width - CONFIG.paddleWidth, aiY, CONFIG.paddleWidth, CONFIG.paddleHeight);
+
+            // Ball
+            ctx.fillStyle = CONFIG.colors.ball;
+            ctx.shadowColor = '#fff';
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, CONFIG.ballRadius, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        gameLoop();
+    </script>
+</body>
+</html>
